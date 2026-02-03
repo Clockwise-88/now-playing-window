@@ -3,82 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Now Playing - Debug Mode</title>
+    <title>Now Playing</title>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f0f0f0; }
-        #pip-container { width: 300px; padding: 20px; text-align: center; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        #music-text { font-size: 1.2rem; font-weight: bold; color: #333; margin-bottom: 10px; }
-        #debug-log { font-family: monospace; font-size: 12px; color: #d00; background: #fee; padding: 10px; border: 1px solid #fcc; width: 80%; max-width: 500px; margin-top: 20px; white-space: pre-wrap; display: none; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #pip-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .pip-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
     <h1>Music Now Playing</h1>
+    <p>Interaction Required for this to work</p>
     <button id="open-pip-button">Open "Now playing" Window</button>
     
     <div id="pip-container" style="display: none;">
-        <div id="music-text">Loading...</div>
+        <!-- This container and iframe will be moved to the PiP window -->
+        <iframe id="pip-iframe" class="pip-iframe" src="https://clockwise3000.online/music.txt" title="Embedded Website"></iframe>
     </div>
 
-    <!-- Error Console on Page -->
-    <div id="debug-log"></div>
-
     <script>
-        const musicDisplay = document.getElementById('music-text');
-        const debugLog = document.getElementById('debug-log');
         const openPipButton = document.getElementById('open-pip-button');
         const pipContainer = document.getElementById('pip-container');
-        const TEXT_URL = 'https://clockwise3000.online';
-
-        function logErrorToScreen(err) {
-            debugLog.style.display = 'block';
-            debugLog.textContent = "DEBUG ERROR: " + err.message + "\n\nTip: If it says 'Failed to fetch', this is likely a CORS block.";
-        }
-
-        async function updateMusicText() {
-            try {
-                const response = await fetch(TEXT_URL);
-                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                
-                const text = await response.text();
-                musicDisplay.textContent = text;
-                debugLog.style.display = 'none'; // Hide error if it starts working
-            } catch (err) {
-                musicDisplay.textContent = "Error loading data";
-                logErrorToScreen(err);
-            }
-        }
-
-        setInterval(updateMusicText, 1000);
-        updateMusicText();
+        const pipIframe = document.getElementById('pip-iframe');
 
         if ('documentPictureInPicture' in window) {
             openPipButton.addEventListener('click', async () => {
-                const pipWindow = await window.documentPictureInPicture.requestWindow({ width: 350, height: 150 });
-                pipWindow.document.body.append(pipContainer);
-                pipContainer.style.display = 'block';
-
-                [...document.styleSheets].forEach((styleSheet) => {
-                    try {
-                        const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
-                        const style = document.createElement('style');
-                        style.textContent = cssRules;
-                        pipWindow.document.head.appendChild(style);
-                    } catch (e) {
-                        const link = document.createElement('link');
-                        link.rel = 'stylesheet'; link.href = styleSheet.href;
-                        pipWindow.document.head.appendChild(link);
-                    }
+                // Request a PiP window with the desired size
+                const pipWindow = await window.documentPictureInPicture.requestWindow({ 
+                    width: 300, 
+                    height: 100 
                 });
 
+                // Move the container and iframe into the PiP window's body
+                pipWindow.document.body.append(pipContainer);
+                
+                // Show the container (it was hidden in the main document)
+                pipContainer.style.display = 'block';
+
+                // Optional: Copy main page styles to the PiP window for consistent rendering
+                const stylesheets = document.querySelectorAll('link[rel="stylesheet"], style');
+                stylesheets.forEach(stylesheet => {
+                    pipWindow.document.head.appendChild(stylesheet.cloneNode(true));
+                });
+                
+                // Event listener to move the element back when PiP window closes
                 pipWindow.addEventListener('pagehide', () => {
                     document.body.append(pipContainer);
-                    pipContainer.style.display = 'none';
+                    pipContainer.style.display = 'none'; // Re-hide in main document
                 });
             });
         } else {
-            openPipButton.textContent = 'PiP API not supported';
             openPipButton.disabled = true;
+            openPipButton.textContent = 'Document PiP API not supported';
         }
     </script>
 </body>

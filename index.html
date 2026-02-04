@@ -71,7 +71,7 @@
 
         // Start fetching immediately and refresh every 10 seconds
         updateMusic();
-        setInterval(updateMusic, 10000);
+        setInterval(updateMusic, 1000);
 
         if ('documentPictureInPicture' in window) {
             openPipButton.addEventListener('click', async () => {

@@ -1,85 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Now Playing</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-        }
-        #pip-container {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .pip-iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 20px;
-        }
-    </style>
-</head>
 <body>
-    <h1>Music Now Playing</h1>
-    <p>Interaction Required for this to work</p>
-    <button id="open-pip-button">Open "Now playing" Window</button>
-    
-    <div id="pip-container" style="display: none;">
-        <!-- This container and iframe will be moved to the PiP window -->
-        <iframe id="pip-iframe" class="pip-iframe" src="https://clockwise3000.online/music.txt" title="Embedded Website"></iframe>
-    </div>
+    <h1>Music Data</h1>
+    <!-- The content will appear here -->
+    <pre id="data-container">Loading data...</pre>
 
     <script>
-        const openPipButton = document.getElementById('open-pip-button');
-        const pipContainer = document.getElementById('pip-container');
-        const pipIframe = document.getElementById('pip-iframe');
+        async function loadMusicData() {
+            const url = "https://clockwise3000.online/music.txt";
+            const display = document.getElementById('data-container');
 
-        if ('documentPictureInPicture' in window) {
-            openPipButton.addEventListener('click', async () => {
-                // Request a PiP window with the desired size
-                const pipWindow = await window.documentPictureInPicture.requestWindow({ 
-                    width: 300, 
-                    height: 100 
-                });
-
-                // Move the container and iframe into the PiP window's body
-                pipWindow.document.body.append(pipContainer);
+            try {
+                // Fetching the text file
+                const response = await fetch(url);
                 
-                // Show the container (it was hidden in the main document)
-                pipContainer.style.display = 'block';
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
-                // Optional: Copy main page styles to the PiP window for consistent rendering
-                const stylesheets = document.querySelectorAll('link[rel="stylesheet"], style');
-                stylesheets.forEach(stylesheet => {
-                    pipWindow.document.head.appendChild(stylesheet.cloneNode(true));
-                });
-                
-                // Event listener to move the element back when PiP window closes
-                pipWindow.addEventListener('pagehide', () => {
-                    document.body.append(pipContainer);
-                    pipContainer.style.display = 'none'; // Re-hide in main document
-                });
-            });
-        } else {
-            openPipButton.disabled = true;
-            openPipButton.textContent = 'Document PiP API not supported';
+                // Converting response to text
+                const text = await response.text();
+                display.textContent = text;
+            } catch (error) {
+                console.error("Fetch error:", error);
+                display.textContent = "Error: " + error.message + 
+                    "\n\n(If you see a CORS error, ensure your Cloudflare Transform Rule is active.)";
+            }
         }
+
+        // Run the function when the page loads
+        loadMusicData();
     </script>
 </body>
 </html>

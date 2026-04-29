@@ -19,18 +19,58 @@
             width: 100%;
             height: 100%;
             display: flex;
-            flex-direction: column;
-            justify-content: center;
+            flex-direction: row;
+            justify-content: flex-start;
             align-items: center;
-            background: #222; /* Darker theme for the PiP window */
+            background: #222;
             color: white;
-            text-align: center;
+            box-sizing: border-box;
+            overflow: hidden;
         }
-        #music-text {
-            font-size: 1.2rem;
+        #album-art {
+            /* Height fills the container; width is set by JS based on aspect ratio + scale */
+            height: 100%;
+            aspect-ratio: var(--art-aspect-ratio);
+            object-fit: cover;
+            flex-shrink: 0;
+            display: block;
+        }
+        #album-art-placeholder {
+            height: 100%;
+            aspect-ratio: var(--art-aspect-ratio);
+            background: #444;
+            flex-shrink: 0;
+        }
+        #text-block {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 8px 12px;
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        #song-name {
+            font-size: var(--font-size-song);
             font-weight: bold;
             margin: 0;
-            padding: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.2;
+        }
+        #artist-name {
+            font-size: var(--font-size-artist);
+            margin: 0;
+            color: #aaa;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.2;
+        }
+        #spacer {
+            flex: 1;
         }
         button {
             padding: 10px 20px;
@@ -44,41 +84,119 @@
     <h1>Music Now Playing</h1>
     <p>Interaction Required for this to work</p>
     <button id="open-pip-button">Open "Now playing" Window</button>
-    
+
     <!-- This container will be moved to the PiP window -->
     <div id="pip-container" style="display: none;">
-        <p id="music-text">Loading...</p>
+        <img id="album-art" src="" alt="Album Art" style="display:none;" />
+        <div id="album-art-placeholder"></div>
+        <div id="text-block">
+            <p id="song-name">Loading...</p>
+            <div id="spacer"></div>
+            <p id="artist-name"></p>
+        </div>
     </div>
 
     <script>
-        const openPipButton = document.getElementById('open-pip-button');
-        const pipContainer = document.getElementById('pip-container');
-        const musicDisplay = document.getElementById('music-text');
+        // ─────────────────────────────────────────────
+        // SCALING CONFIGURATION
+        // Adjust these values to control the PiP window size and layout.
+        //
+        // SCALE: Real pixel multiplier applied to the BASE sizes below.
+        //        1.0 = default, 2.0 = double size, 0.5 = half size.
+        //
+        // BASE_WIDTH / BASE_HEIGHT: The "1x" pixel dimensions of the PiP window.
+        //
+        // ART_ASPECT_RATIO: Width-to-height ratio of the album art column.
+        //                   "1 / 1" = square, "4 / 3" = landscape, "1 / 1" recommended.
+        //
+        // TEXT_ASPECT_RATIO: Width-to-height ratio of the text column.
+        //                    Controls how wide the text area is relative to its height.
+        //
+        // FONT_SCALE: Additional multiplier just for font sizes (independent of window scale).
+        // ─────────────────────────────────────────────
+        const CONFIG = {
+            SCALE:            1.0,   // Overall real-pixel scale multiplier
+            BASE_WIDTH:       350,   // Base PiP window width in pixels (at SCALE = 1.0)
+            BASE_HEIGHT:      100,   // Base PiP window height in pixels (at SCALE = 1.0)
+            ART_ASPECT_RATIO: "1 / 1", // Album art column aspect ratio (CSS aspect-ratio value)
+            TEXT_ASPECT_RATIO: "2.5 / 1", // Text column aspect ratio (informational; affects font sizing)
+            FONT_SCALE:       1.0,   // Extra font size multiplier (1.0 = auto-fit to height)
+        };
+        // ─────────────────────────────────────────────
 
-        // Function to grab the data from the root domain
+        const pipContainer   = document.getElementById('pip-container');
+        const albumArt       = document.getElementById('album-art');
+        const albumArtPh     = document.getElementById('album-art-placeholder');
+        const songDisplay    = document.getElementById('song-name');
+        const artistDisplay  = document.getElementById('artist-name');
+
+        // Apply CSS variables for aspect ratio
+        pipContainer.style.setProperty('--art-aspect-ratio', CONFIG.ART_ASPECT_RATIO);
+
+        // Derive font sizes from base height and font scale
+        const baseFontSizeSong   = (CONFIG.BASE_HEIGHT * 0.26 * CONFIG.FONT_SCALE).toFixed(1);
+        const baseFontSizeArtist = (CONFIG.BASE_HEIGHT * 0.20 * CONFIG.FONT_SCALE).toFixed(1);
+        pipContainer.style.setProperty('--font-size-song',   baseFontSizeSong   + 'px');
+        pipContainer.style.setProperty('--font-size-artist', baseFontSizeArtist + 'px');
+
+        // Compute real pixel dimensions
+        const pipWidth  = Math.round(CONFIG.BASE_WIDTH  * CONFIG.SCALE);
+        const pipHeight = Math.round(CONFIG.BASE_HEIGHT * CONFIG.SCALE);
+
         async function updateMusic() {
             try {
-                const response = await fetch("https://clockwise3000.online/music.txt");
-                if (response.ok) {
-                    const text = await response.text();
-                    musicDisplay.textContent = text;
+                const [musicRes, artRes] = await Promise.all([
+                    fetch("https://clockwise3000.online/music.txt"),
+                    fetch("https://clockwise3000.online/album-art.txt")
+                ]);
+
+                // Parse music text: format is "Song Name ~ Artist"
+                if (musicRes.ok) {
+                    const text = (await musicRes.text()).trim();
+                    const tildeIdx = text.lastIndexOf(' ~ ');
+                    if (tildeIdx !== -1) {
+                        songDisplay.textContent   = text.slice(0, tildeIdx).trim();
+                        artistDisplay.textContent = text.slice(tildeIdx + 3).trim();
+                    } else {
+                        songDisplay.textContent   = text;
+                        artistDisplay.textContent = '';
+                    }
                 }
+
+                // Parse album art URL
+                if (artRes.ok) {
+                    const artUrl = (await artRes.text()).trim();
+                    if (artUrl) {
+                        albumArt.src = artUrl;
+                        albumArt.style.display = 'block';
+                        albumArtPh.style.display = 'none';
+                    } else {
+                        albumArt.style.display = 'none';
+                        albumArtPh.style.display = 'block';
+                    }
+                } else {
+                    albumArt.style.display = 'none';
+                    albumArtPh.style.display = 'block';
+                }
+
             } catch (err) {
                 console.error("CORS or Fetch error:", err);
-                musicDisplay.textContent = "Error loading music info";
+                songDisplay.textContent   = "Error loading music info";
+                artistDisplay.textContent = '';
+                albumArt.style.display    = 'none';
+                albumArtPh.style.display  = 'block';
             }
         }
 
-        // Start fetching immediately and refresh every 10 seconds
+        // Start fetching immediately and refresh every 1 second
         updateMusic();
         setInterval(updateMusic, 1000);
 
         if ('documentPictureInPicture' in window) {
-            openPipButton.addEventListener('click', async () => {
-                // Request the PiP window
-                const pipWindow = await window.documentPictureInPicture.requestWindow({ 
-                    width: 350, 
-                    height: 120 
+            document.getElementById('open-pip-button').addEventListener('click', async () => {
+                const pipWindow = await window.documentPictureInPicture.requestWindow({
+                    width:  pipWidth,
+                    height: pipHeight
                 });
 
                 // Copy styles to the new window
@@ -100,15 +218,25 @@
                 pipWindow.document.body.append(pipContainer);
                 pipContainer.style.display = 'flex';
 
+                // Apply scaled font sizes inside PiP window (re-derive with scale)
+                const scaledFontSong   = (CONFIG.BASE_HEIGHT * CONFIG.SCALE * 0.26 * CONFIG.FONT_SCALE).toFixed(1);
+                const scaledFontArtist = (CONFIG.BASE_HEIGHT * CONFIG.SCALE * 0.20 * CONFIG.FONT_SCALE).toFixed(1);
+                pipContainer.style.setProperty('--font-size-song',   scaledFontSong   + 'px');
+                pipContainer.style.setProperty('--font-size-artist', scaledFontArtist + 'px');
+
                 // Return it to the main page when PiP closes
                 pipWindow.addEventListener('pagehide', () => {
                     document.body.append(pipContainer);
                     pipContainer.style.display = 'none';
+                    // Restore base font sizes
+                    pipContainer.style.setProperty('--font-size-song',   baseFontSizeSong   + 'px');
+                    pipContainer.style.setProperty('--font-size-artist', baseFontSizeArtist + 'px');
                 });
             });
         } else {
-            openPipButton.disabled = true;
-            openPipButton.textContent = 'Document PiP API not supported';
+            const btn = document.getElementById('open-pip-button');
+            btn.disabled = true;
+            btn.textContent = 'Document PiP API not supported';
         }
     </script>
 </body>

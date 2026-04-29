@@ -28,7 +28,6 @@
             overflow: hidden;
         }
         #album-art {
-            /* Height fills the container; width is set by JS based on aspect ratio + scale */
             height: 100%;
             aspect-ratio: var(--art-aspect-ratio);
             object-fit: cover;
@@ -44,33 +43,31 @@
         #text-block {
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: center;
             padding: 8px 12px;
             flex: 1;
             min-width: 0;
             height: 100%;
             box-sizing: border-box;
+            /* Fixed gap between song and artist — does not grow with scale */
+            gap: 3px;
         }
         #song-name {
             font-size: var(--font-size-song);
             font-weight: bold;
             margin: 0;
-            white-space: nowrap;
+            white-space: normal;
             overflow: hidden;
-            text-overflow: ellipsis;
-            line-height: 1.2;
+            /* px line-height so wrapped lines stay tight regardless of scale */
+            line-height: var(--line-height-song);
         }
         #artist-name {
             font-size: var(--font-size-artist);
             margin: 0;
             color: #aaa;
-            white-space: nowrap;
+            white-space: normal;
             overflow: hidden;
-            text-overflow: ellipsis;
-            line-height: 1.2;
-        }
-        #spacer {
-            flex: 1;
+            line-height: var(--line-height-artist);
         }
         button {
             padding: 10px 20px;
@@ -91,7 +88,6 @@
         <div id="album-art-placeholder"></div>
         <div id="text-block">
             <p id="song-name">Loading...</p>
-            <div id="spacer"></div>
             <p id="artist-name"></p>
         </div>
     </div>
@@ -99,49 +95,59 @@
     <script>
         // ─────────────────────────────────────────────
         // SCALING CONFIGURATION
-        // Adjust these values to control the PiP window size and layout.
         //
-        // SCALE: Real pixel multiplier applied to the BASE sizes below.
-        //        1.0 = default, 2.0 = double size, 0.5 = half size.
+        // SCALE      — Real pixel multiplier for the entire PiP window (width + height).
+        //              1.0 = default, 2.0 = double size, 0.5 = half size.
         //
-        // BASE_WIDTH / BASE_HEIGHT: The "1x" pixel dimensions of the PiP window.
+        // TEXT_SCALE — Independent font-size multiplier. Does NOT affect the window size
+        //              or album art. 1.0 = auto-sized to window height, 1.5 = 50% larger,
+        //              0.8 = smaller.
         //
-        // ART_ASPECT_RATIO: Width-to-height ratio of the album art column.
-        //                   "1 / 1" = square, "4 / 3" = landscape, "1 / 1" recommended.
+        // BASE_WIDTH / BASE_HEIGHT — The "1×" pixel dimensions of the PiP window.
         //
-        // TEXT_ASPECT_RATIO: Width-to-height ratio of the text column.
-        //                    Controls how wide the text area is relative to its height.
-        //
-        // FONT_SCALE: Additional multiplier just for font sizes (independent of window scale).
+        // ART_ASPECT_RATIO — CSS aspect-ratio of the album art column.
+        //                    "1 / 1" = square, "4 / 3" = landscape.
         // ─────────────────────────────────────────────
         const CONFIG = {
-            SCALE:            1.0,   // Overall real-pixel scale multiplier
-            BASE_WIDTH:       350,   // Base PiP window width in pixels (at SCALE = 1.0)
-            BASE_HEIGHT:      100,   // Base PiP window height in pixels (at SCALE = 1.0)
-            ART_ASPECT_RATIO: "1 / 1", // Album art column aspect ratio (CSS aspect-ratio value)
-            TEXT_ASPECT_RATIO: "2.5 / 1", // Text column aspect ratio (informational; affects font sizing)
-            FONT_SCALE:       1.0,   // Extra font size multiplier (1.0 = auto-fit to height)
+            SCALE:            1.0,      // Window scale multiplier
+            TEXT_SCALE:       1.0,      // Font size multiplier (independent of window scale)
+            BASE_WIDTH:       350,      // Base PiP window width  (pixels, at SCALE = 1.0)
+            BASE_HEIGHT:      100,      // Base PiP window height (pixels, at SCALE = 1.0)
+            ART_ASPECT_RATIO: "1 / 1",  // Album art column aspect ratio
         };
         // ─────────────────────────────────────────────
 
-        const pipContainer   = document.getElementById('pip-container');
-        const albumArt       = document.getElementById('album-art');
-        const albumArtPh     = document.getElementById('album-art-placeholder');
-        const songDisplay    = document.getElementById('song-name');
-        const artistDisplay  = document.getElementById('artist-name');
+        const pipContainer  = document.getElementById('pip-container');
+        const albumArt      = document.getElementById('album-art');
+        const albumArtPh    = document.getElementById('album-art-placeholder');
+        const songDisplay   = document.getElementById('song-name');
+        const artistDisplay = document.getElementById('artist-name');
 
-        // Apply CSS variables for aspect ratio
-        pipContainer.style.setProperty('--art-aspect-ratio', CONFIG.ART_ASPECT_RATIO);
-
-        // Derive font sizes from base height and font scale
-        const baseFontSizeSong   = (CONFIG.BASE_HEIGHT * 0.26 * CONFIG.FONT_SCALE).toFixed(1);
-        const baseFontSizeArtist = (CONFIG.BASE_HEIGHT * 0.20 * CONFIG.FONT_SCALE).toFixed(1);
-        pipContainer.style.setProperty('--font-size-song',   baseFontSizeSong   + 'px');
-        pipContainer.style.setProperty('--font-size-artist', baseFontSizeArtist + 'px');
-
-        // Compute real pixel dimensions
+        // Compute real pixel dimensions for the PiP window request
         const pipWidth  = Math.round(CONFIG.BASE_WIDTH  * CONFIG.SCALE);
         const pipHeight = Math.round(CONFIG.BASE_HEIGHT * CONFIG.SCALE);
+
+        // Apply all CSS variables derived from CONFIG.
+        // Font sizes are based on the real window height × TEXT_SCALE.
+        // Line-heights are fixed in px (font-size × 1.15) so that wrapping lines
+        // never expand the gap between song title and artist name.
+        function applyStyles() {
+            const actualHeight = CONFIG.BASE_HEIGHT * CONFIG.SCALE;
+
+            const fontSong   = +(actualHeight * 0.26 * CONFIG.TEXT_SCALE).toFixed(1);
+            const fontArtist = +(actualHeight * 0.20 * CONFIG.TEXT_SCALE).toFixed(1);
+            // Fixed-px line-height: wrapping adds lines of exactly this height, no more
+            const lhSong     = +(fontSong   * 1.15).toFixed(1);
+            const lhArtist   = +(fontArtist * 1.15).toFixed(1);
+
+            pipContainer.style.setProperty('--art-aspect-ratio',  CONFIG.ART_ASPECT_RATIO);
+            pipContainer.style.setProperty('--font-size-song',    fontSong   + 'px');
+            pipContainer.style.setProperty('--font-size-artist',  fontArtist + 'px');
+            pipContainer.style.setProperty('--line-height-song',  lhSong     + 'px');
+            pipContainer.style.setProperty('--line-height-artist', lhArtist  + 'px');
+        }
+
+        applyStyles();
 
         async function updateMusic() {
             try {
@@ -188,7 +194,6 @@
             }
         }
 
-        // Start fetching immediately and refresh every 1 second
         updateMusic();
         setInterval(updateMusic, 1000);
 
@@ -214,23 +219,16 @@
                     }
                 });
 
-                // Move the container into the PiP window
+                // Move the container into the PiP window and re-apply CSS vars
                 pipWindow.document.body.append(pipContainer);
                 pipContainer.style.display = 'flex';
-
-                // Apply scaled font sizes inside PiP window (re-derive with scale)
-                const scaledFontSong   = (CONFIG.BASE_HEIGHT * CONFIG.SCALE * 0.26 * CONFIG.FONT_SCALE).toFixed(1);
-                const scaledFontArtist = (CONFIG.BASE_HEIGHT * CONFIG.SCALE * 0.20 * CONFIG.FONT_SCALE).toFixed(1);
-                pipContainer.style.setProperty('--font-size-song',   scaledFontSong   + 'px');
-                pipContainer.style.setProperty('--font-size-artist', scaledFontArtist + 'px');
+                applyStyles();
 
                 // Return it to the main page when PiP closes
                 pipWindow.addEventListener('pagehide', () => {
                     document.body.append(pipContainer);
                     pipContainer.style.display = 'none';
-                    // Restore base font sizes
-                    pipContainer.style.setProperty('--font-size-song',   baseFontSizeSong   + 'px');
-                    pipContainer.style.setProperty('--font-size-artist', baseFontSizeArtist + 'px');
+                    applyStyles();
                 });
             });
         } else {
